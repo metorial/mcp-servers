@@ -33,7 +33,7 @@ export let setOauthHandler = (c: {
     | string
     | {
         authorizationUrl: string;
-        supportsPKCE?: boolean;
+        codeVerifier?: string;
       }
   >;
   handleCallback: (d: {
@@ -54,7 +54,9 @@ export let setOauthHandler = (c: {
     [key: string]: any;
   }>;
   refreshAccessToken?: (data: {
+    fields: Record<string, string>;
     refreshToken: string;
+    redirectUri: string;
     clientId: string;
     clientSecret: string;
   }) => Promise<{

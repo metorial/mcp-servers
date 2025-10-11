@@ -1,4 +1,4 @@
-import { McpServer, metorial, ResourceTemplate, z } from '@metorial/mcp-server-sdk';
+import { metorial, ResourceTemplate, z } from '@metorial/mcp-server-sdk';
 
 /**
  * Slack MCP Server
@@ -9,159 +9,170 @@ interface Config {
   token: string;
 }
 
-metorial.withArgs(config => {
-  const server = new McpServer({
+metorial.createServer<Config>(
+  {
     name: 'slack-mcp-server',
     version: '1.0.0'
-  });
+  },
+  async (server, config) => {
+    // Base URL for Slack API
+    const SLACK_API_BASE = 'https://slack.com/api';
 
-  // Base URL for Slack API
-  const SLACK_API_BASE = 'https://slack.com/api';
+    /**
+     * Helper function to make Slack API requests
+     */
+    async function slackRequest(
+      endpoint: string,
+      method: string = 'GET',
+      body?: Record<string, any>
+    ): Promise<any> {
+      console.log(config);
 
-  /**
-   * Helper function to make Slack API requests
-   */
-  async function slackRequest(
-    endpoint: string,
-    method: string = 'GET',
-    body?: Record<string, any>
-  ): Promise<any> {
-    console.log(config);
-
-    const url = `${SLACK_API_BASE}/${endpoint}`;
-    const headers: Record<string, string> = {
-      'Authorization': `Bearer ${config.token}`,
-      'Content-Type': 'application/json'
-    };
-
-    const options: RequestInit = {
-      method,
-      headers
-    };
-
-    if (body && method !== 'GET') {
-      options.body = JSON.stringify(body);
-    }
-
-    // For GET requests with body, append as query params
-    let finalUrl = url;
-    if (body && method === 'GET') {
-      const params = new URLSearchParams();
-      Object.entries(body).forEach(([key, value]) => {
-        if (value !== undefined && value !== null) {
-          params.append(key, String(value));
-        }
-      });
-      finalUrl = `${url}?${params.toString()}`;
-    }
-
-    const response = await fetch(finalUrl, options);
-    const data = await response.json();
-
-    if (!data.ok) {
-      throw new Error(`Slack API error: ${data.error || 'Unknown error'}`);
-    }
-
-    return data;
-  }
-
-  // ==================== TOOLS ====================
-
-  /**
-   * Tool: send_message
-   * Send a message to a Slack channel or user
-   */
-  server.registerTool(
-    'send_message',
-    {
-      title: 'Send Message',
-      description: 'Send a message to a Slack channel or user',
-      inputSchema: {
-        channel_id: z.string().describe('Channel ID or user ID to send message to'),
-        text: z.string().describe('Message text content'),
-        thread_ts: z.string().optional().describe('Thread timestamp to reply in a thread'),
-        // blocks: z.array(z.any()).optional().describe('Slack Block Kit blocks for rich formatting')
-      }
-    },
-    async ({ channel_id, text, thread_ts, blocks }) => {
-      const body: Record<string, any> = {
-        channel: channel_id,
-        text
+      const url = `${SLACK_API_BASE}/${endpoint}`;
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${config.token}`,
+        'Content-Type': 'application/json'
       };
 
-      if (thread_ts) {
-        body.thread_ts = thread_ts;
+      const options: RequestInit = {
+        method,
+        headers
+      };
+
+      if (body && method !== 'GET') {
+        options.body = JSON.stringify(body);
       }
 
-      /*if (blocks) {
+      // For GET requests with body, append as query params
+      let finalUrl = url;
+      if (body && method === 'GET') {
+        const params = new URLSearchParams();
+        Object.entries(body).forEach(([key, value]) => {
+          if (value !== undefined && value !== null) {
+            params.append(key, String(value));
+          }
+        });
+        finalUrl = `${url}?${params.toString()}`;
+      }
+
+      const response = await fetch(finalUrl, options);
+      const data = (await response.json()) as any;
+
+      if (!data.ok) {
+        throw new Error(`Slack API error: ${data.error || 'Unknown error'}`);
+      }
+
+      return data;
+    }
+
+    // ==================== TOOLS ====================
+
+    /**
+     * Tool: send_message
+     * Send a message to a Slack channel or user
+     */
+    server.registerTool(
+      'send_message',
+      {
+        title: 'Send Message',
+        description: 'Send a message to a Slack channel or user',
+        inputSchema: {
+          channel_id: z.string().describe('Channel ID or user ID to send message to'),
+          text: z.string().describe('Message text content'),
+          thread_ts: z.string().optional().describe('Thread timestamp to reply in a thread')
+          // blocks: z.array(z.any()).optional().describe('Slack Block Kit blocks for rich formatting')
+        }
+      },
+      async ({ channel_id, text, thread_ts }) => {
+        const body: Record<string, any> = {
+          channel: channel_id,
+          text
+        };
+
+        if (thread_ts) {
+          body.thread_ts = thread_ts;
+        }
+
+        /*if (blocks) {
         body.blocks = blocks;
       }*/
 
-      const result = await slackRequest('chat.postMessage', 'POST', body);
+        const result = await slackRequest('chat.postMessage', 'POST', body);
 
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify({
-              success: true,
-              message_ts: result.ts,
-              channel: result.channel
-            }, null, 2)
-          }
-        ]
-      };
-    }
-  );
-
-  /**
-   * Tool: list_channels
-   * List all channels accessible to the bot
-   */
-  server.registerTool(
-    'list_channels',
-    {
-      title: 'List Channels',
-      description: 'List all channels accessible to the bot',
-      inputSchema: {
-        types: z.string().optional().describe('Channel types to include (e.g., "public_channel,private_channel")'),
-        exclude_archived: z.boolean().optional().describe('Exclude archived channels'),
-        limit: z.number().optional().describe('Maximum number of channels to return')
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  success: true,
+                  message_ts: result.ts,
+                  channel: result.channel
+                },
+                null,
+                2
+              )
+            }
+          ]
+        };
       }
-    },
-    async ({ types, exclude_archived, limit }) => {
-      const params: Record<string, any> = {};
-      
-      if (types) params.types = types;
-      if (exclude_archived !== undefined) params.exclude_archived = exclude_archived;
-      if (limit) params.limit = limit;
+    );
 
-      const result = await slackRequest('conversations.list', 'GET', params);
+    /**
+     * Tool: list_channels
+     * List all channels accessible to the bot
+     */
+    server.registerTool(
+      'list_channels',
+      {
+        title: 'List Channels',
+        description: 'List all channels accessible to the bot',
+        inputSchema: {
+          types: z
+            .string()
+            .optional()
+            .describe('Channel types to include (e.g., "public_channel,private_channel")'),
+          exclude_archived: z.boolean().optional().describe('Exclude archived channels'),
+          limit: z.number().optional().describe('Maximum number of channels to return')
+        }
+      },
+      async ({ types, exclude_archived, limit }) => {
+        const params: Record<string, any> = {};
 
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify({
-              channels: result.channels.map((ch: any) => ({
-                id: ch.id,
-                name: ch.name,
-                is_private: ch.is_private,
-                is_archived: ch.is_archived,
-                num_members: ch.num_members
-              }))
-            }, null, 2)
-          }
-        ]
-      };
-    }
-  );
+        if (types) params.types = types;
+        if (exclude_archived !== undefined) params.exclude_archived = exclude_archived;
+        if (limit) params.limit = limit;
 
-  /**
-   * Tool: list_users
-   * List users in the workspace
-   */
-  /*server.registerTool(
+        const result = await slackRequest('conversations.list', 'GET', params);
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  channels: result.channels.map((ch: any) => ({
+                    id: ch.id,
+                    name: ch.name,
+                    is_private: ch.is_private,
+                    is_archived: ch.is_archived,
+                    num_members: ch.num_members
+                  }))
+                },
+                null,
+                2
+              )
+            }
+          ]
+        };
+      }
+    );
+
+    /**
+     * Tool: list_users
+     * List users in the workspace
+     */
+    /*server.registerTool(
     'list_users',
     {
       title: 'List Users',
@@ -199,11 +210,11 @@ metorial.withArgs(config => {
     }
   );*/
 
-  /**
-   * Tool: create_channel
-   * Create a new Slack channel
-   */
-  /*server.registerTool(
+    /**
+     * Tool: create_channel
+     * Create a new Slack channel
+     */
+    /*server.registerTool(
     'create_channel',
     {
       title: 'Create Channel',
@@ -247,11 +258,11 @@ metorial.withArgs(config => {
     }
   );*/
 
-  /**
-   * Tool: invite_to_channel
-   * Invite users to a channel
-   */
-  /*server.registerTool(
+    /**
+     * Tool: invite_to_channel
+     * Invite users to a channel
+     */
+    /*server.registerTool(
     'invite_to_channel',
     {
       title: 'Invite to Channel',
@@ -281,11 +292,11 @@ metorial.withArgs(config => {
     }
   );*/
 
-  /**
-   * Tool: archive_channel
-   * Archive a channel
-   */
-  /*server.registerTool(
+    /**
+     * Tool: archive_channel
+     * Archive a channel
+     */
+    /*server.registerTool(
     'archive_channel',
     {
       title: 'Archive Channel',
@@ -313,11 +324,11 @@ metorial.withArgs(config => {
     }
   );*/
 
-  /**
-   * Tool: set_channel_topic
-   * Set the topic of a channel
-   */
-  /*server.registerTool(
+    /**
+     * Tool: set_channel_topic
+     * Set the topic of a channel
+     */
+    /*server.registerTool(
     'set_channel_topic',
     {
       title: 'Set Channel Topic',
@@ -347,11 +358,11 @@ metorial.withArgs(config => {
     }
   );*/
 
-  /**
-   * Tool: set_channel_purpose
-   * Set the purpose of a channel
-   */
-  /*server.registerTool(
+    /**
+     * Tool: set_channel_purpose
+     * Set the purpose of a channel
+     */
+    /*server.registerTool(
     'set_channel_purpose',
     {
       title: 'Set Channel Purpose',
@@ -381,47 +392,51 @@ metorial.withArgs(config => {
     }
   );*/
 
-  /**
-   * Tool: add_reaction
-   * Add an emoji reaction to a message
-   */
-  server.registerTool(
-    'add_reaction',
-    {
-      title: 'Add Reaction',
-      description: 'Add an emoji reaction to a message',
-      inputSchema: {
-        channel_id: z.string().describe('Channel ID'),
-        timestamp: z.string().describe('Message timestamp'),
-        reaction: z.string().describe('Emoji name without colons (e.g., "thumbsup")')
+    /**
+     * Tool: add_reaction
+     * Add an emoji reaction to a message
+     */
+    server.registerTool(
+      'add_reaction',
+      {
+        title: 'Add Reaction',
+        description: 'Add an emoji reaction to a message',
+        inputSchema: {
+          channel_id: z.string().describe('Channel ID'),
+          timestamp: z.string().describe('Message timestamp'),
+          reaction: z.string().describe('Emoji name without colons (e.g., "thumbsup")')
+        }
+      },
+      async ({ channel_id, timestamp, reaction }) => {
+        await slackRequest('reactions.add', 'POST', {
+          channel: channel_id,
+          timestamp,
+          name: reaction
+        });
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  success: true,
+                  message: `Added :${reaction}: reaction`
+                },
+                null,
+                2
+              )
+            }
+          ]
+        };
       }
-    },
-    async ({ channel_id, timestamp, reaction }) => {
-      await slackRequest('reactions.add', 'POST', {
-        channel: channel_id,
-        timestamp,
-        name: reaction
-      });
+    );
 
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify({
-              success: true,
-              message: `Added :${reaction}: reaction`
-            }, null, 2)
-          }
-        ]
-      };
-    }
-  );
-
-  /**
-   * Tool: remove_reaction
-   * Remove an emoji reaction from a message
-   */
-  /*server.registerTool(
+    /**
+     * Tool: remove_reaction
+     * Remove an emoji reaction from a message
+     */
+    /*server.registerTool(
     'remove_reaction',
     {
       title: 'Remove Reaction',
@@ -453,58 +468,62 @@ metorial.withArgs(config => {
     }
   );*/
 
-  /**
-   * Tool: upload_file
-   * Upload a file to Slack
-   */
-  server.registerTool(
-    'upload_file',
-    {
-      title: 'Upload File',
-      description: 'Upload a file to Slack channels',
-      inputSchema: {
-        channels: z.array(z.string()).describe('Array of channel IDs to share file in'),
-        content: z.string().describe('File content as string'),
-        filename: z.string().describe('Filename'),
-        title: z.string().optional().describe('File title'),
-        initial_comment: z.string().optional().describe('Initial comment with file')
+    /**
+     * Tool: upload_file
+     * Upload a file to Slack
+     */
+    server.registerTool(
+      'upload_file',
+      {
+        title: 'Upload File',
+        description: 'Upload a file to Slack channels',
+        inputSchema: {
+          channels: z.array(z.string()).describe('Array of channel IDs to share file in'),
+          content: z.string().describe('File content as string'),
+          filename: z.string().describe('Filename'),
+          title: z.string().optional().describe('File title'),
+          initial_comment: z.string().optional().describe('Initial comment with file')
+        }
+      },
+      async ({ channels, content, filename, title, initial_comment }) => {
+        const body: Record<string, any> = {
+          channels: channels.join(','),
+          content,
+          filename
+        };
+
+        if (title) body.title = title;
+        if (initial_comment) body.initial_comment = initial_comment;
+
+        const result = await slackRequest('files.upload', 'POST', body);
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  success: true,
+                  file: {
+                    id: result.file.id,
+                    name: result.file.name,
+                    url_private: result.file.url_private
+                  }
+                },
+                null,
+                2
+              )
+            }
+          ]
+        };
       }
-    },
-    async ({ channels, content, filename, title, initial_comment }) => {
-      const body: Record<string, any> = {
-        channels: channels.join(','),
-        content,
-        filename
-      };
+    );
 
-      if (title) body.title = title;
-      if (initial_comment) body.initial_comment = initial_comment;
-
-      const result = await slackRequest('files.upload', 'POST', body);
-
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify({
-              success: true,
-              file: {
-                id: result.file.id,
-                name: result.file.name,
-                url_private: result.file.url_private
-              }
-            }, null, 2)
-          }
-        ]
-      };
-    }
-  );
-
-  /**
-   * Tool: delete_message
-   * Delete a message from Slack
-   */
-  /*server.registerTool(
+    /**
+     * Tool: delete_message
+     * Delete a message from Slack
+     */
+    /*server.registerTool(
     'delete_message',
     {
       title: 'Delete Message',
@@ -534,11 +553,11 @@ metorial.withArgs(config => {
     }
   );*/
 
-  /**
-   * Tool: update_message
-   * Update an existing message
-   */
-  /*server.registerTool(
+    /**
+     * Tool: update_message
+     * Update an existing message
+     */
+    /*server.registerTool(
     'update_message',
     {
       title: 'Update Message',
@@ -578,227 +597,250 @@ metorial.withArgs(config => {
     }
   );*/
 
-  /**
-   * Tool: search_messages
-   * Search for messages in the workspace
-   */
-  server.registerTool(
-    'list_messages',
-    {
-      title: 'List Messages',
-      description: 'List messages from a specific channel',
-      inputSchema: {
-        channel_id: z.string().describe('The channel to list messages for'),
+    /**
+     * Tool: search_messages
+     * Search for messages in the workspace
+     */
+    server.registerTool(
+      'list_messages',
+      {
+        title: 'List Messages',
+        description: 'List messages from a specific channel',
+        inputSchema: {
+          channel_id: z.string().describe('The channel to list messages for')
+        }
+      },
+      async ({ channel_id }) => {
+        const result = await slackRequest('conversations.history', 'GET', {
+          channel: channel_id,
+          limit: 100
+        });
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  channel_id,
+                  messages: result.messages.map((msg: any) => ({
+                    type: msg.type,
+                    user: msg.user,
+                    text: msg.text,
+                    timestamp: msg.ts,
+                    thread_ts: msg.thread_ts,
+                    reply_count: msg.reply_count,
+                    reactions: msg.reactions
+                  }))
+                },
+                null,
+                2
+              )
+            }
+          ]
+        };
       }
-    },
-    async ({ channel_id }) => {
-      const result = await slackRequest('conversations.history', 'GET', {
-        channel: channel_id,
-        limit: 100
-      });
+    );
 
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify({
-              channel_id,
-              messages: result.messages.map((msg: any) => ({
-                type: msg.type,
-                user: msg.user,
-                text: msg.text,
-                timestamp: msg.ts,
-                thread_ts: msg.thread_ts,
-                reply_count: msg.reply_count,
-                reactions: msg.reactions
-              }))
-            }, null, 2)
-          }
-        ]
-      };
-    }
-  );
+    /**
+     * Tool: list_conversations
+     * List conversations (channels, DMs, groups)
+     */
+    server.registerTool(
+      'list_conversations',
+      {
+        title: 'List Conversations',
+        description: 'List all conversations including channels, DMs, and groups',
+        inputSchema: {
+          types: z
+            .string()
+            .optional()
+            .describe('Conversation types (e.g., "public_channel,private_channel,mpim,im")'),
+          limit: z.number().optional().describe('Maximum number of conversations to return')
+        }
+      },
+      async ({ types, limit }) => {
+        const params: Record<string, any> = {};
 
-  /**
-   * Tool: list_conversations
-   * List conversations (channels, DMs, groups)
-   */
-  server.registerTool(
-    'list_conversations',
-    {
-      title: 'List Conversations',
-      description: 'List all conversations including channels, DMs, and groups',
-      inputSchema: {
-        types: z.string().optional().describe('Conversation types (e.g., "public_channel,private_channel,mpim,im")'),
-        limit: z.number().optional().describe('Maximum number of conversations to return')
+        if (types) params.types = types;
+        if (limit) params.limit = limit;
+
+        const result = await slackRequest('conversations.list', 'GET', params);
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  conversations: result.channels.map((conv: any) => ({
+                    id: conv.id,
+                    name: conv.name,
+                    is_channel: conv.is_channel,
+                    is_group: conv.is_group,
+                    is_im: conv.is_im,
+                    is_private: conv.is_private
+                  }))
+                },
+                null,
+                2
+              )
+            }
+          ]
+        };
       }
-    },
-    async ({ types, limit }) => {
-      const params: Record<string, any> = {};
-      
-      if (types) params.types = types;
-      if (limit) params.limit = limit;
+    );
 
-      const result = await slackRequest('conversations.list', 'GET', params);
+    // ==================== RESOURCES ====================
 
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify({
-              conversations: result.channels.map((conv: any) => ({
-                id: conv.id,
-                name: conv.name,
-                is_channel: conv.is_channel,
-                is_group: conv.is_group,
-                is_im: conv.is_im,
-                is_private: conv.is_private
-              }))
-            }, null, 2)
-          }
-        ]
-      };
-    }
-  );
+    /**
+     * Resource: slack://channel/{channel_id}
+     * Get detailed information about a specific channel
+     */
+    server.registerResource(
+      'channel_info',
+      new ResourceTemplate('slack://channel/{channel_id}', { list: undefined }),
+      {
+        title: 'Channel Information',
+        description: 'Get detailed information about a specific Slack channel'
+      },
+      async (uri, { channel_id }) => {
+        const result = await slackRequest('conversations.info', 'GET', {
+          channel: channel_id
+        });
 
-  // ==================== RESOURCES ====================
+        const channel = result.channel;
 
-  /**
-   * Resource: slack://channel/{channel_id}
-   * Get detailed information about a specific channel
-   */
-  server.registerResource(
-    'channel_info',
-    new ResourceTemplate('slack://channel/{channel_id}', { list: undefined }),
-    {
-      title: 'Channel Information',
-      description: 'Get detailed information about a specific Slack channel'
-    },
-    async (uri, { channel_id }) => {
-      const result = await slackRequest('conversations.info', 'GET', {
-        channel: channel_id
-      });
+        return {
+          contents: [
+            {
+              uri: uri.href,
+              mimeType: 'application/json',
+              text: JSON.stringify(
+                {
+                  id: channel.id,
+                  name: channel.name,
+                  is_channel: channel.is_channel,
+                  is_private: channel.is_private,
+                  is_archived: channel.is_archived,
+                  created: channel.created,
+                  creator: channel.creator,
+                  topic: channel.topic,
+                  purpose: channel.purpose,
+                  num_members: channel.num_members
+                },
+                null,
+                2
+              )
+            }
+          ]
+        };
+      }
+    );
 
-      const channel = result.channel;
+    /**
+     * Resource: slack://channel/{channel_id}/messages
+     * Get recent messages from a specific channel
+     */
+    server.registerResource(
+      'channel_messages',
+      new ResourceTemplate('slack://channel/{channel_id}/messages', { list: undefined }),
+      {
+        title: 'Channel Messages',
+        description: 'Get recent messages from a specific channel'
+      },
+      async (uri, { channel_id }) => {
+        const result = await slackRequest('conversations.history', 'GET', {
+          channel: channel_id,
+          limit: 100
+        });
 
-      return {
-        contents: [
-          {
-            uri: uri.href,
-            mimeType: 'application/json',
-            text: JSON.stringify({
-              id: channel.id,
-              name: channel.name,
-              is_channel: channel.is_channel,
-              is_private: channel.is_private,
-              is_archived: channel.is_archived,
-              created: channel.created,
-              creator: channel.creator,
-              topic: channel.topic,
-              purpose: channel.purpose,
-              num_members: channel.num_members
-            }, null, 2)
-          }
-        ]
-      };
-    }
-  );
+        return {
+          contents: [
+            {
+              uri: uri.href,
+              mimeType: 'application/json',
+              text: JSON.stringify(
+                {
+                  channel_id,
+                  messages: result.messages.map((msg: any) => ({
+                    type: msg.type,
+                    user: msg.user,
+                    text: msg.text,
+                    timestamp: msg.ts,
+                    thread_ts: msg.thread_ts,
+                    reply_count: msg.reply_count,
+                    reactions: msg.reactions
+                  }))
+                },
+                null,
+                2
+              )
+            }
+          ]
+        };
+      }
+    );
 
-  /**
-   * Resource: slack://channel/{channel_id}/messages
-   * Get recent messages from a specific channel
-   */
-  server.registerResource(
-    'channel_messages',
-    new ResourceTemplate('slack://channel/{channel_id}/messages', { list: undefined }),
-    {
-      title: 'Channel Messages',
-      description: 'Get recent messages from a specific channel'
-    },
-    async (uri, { channel_id }) => {
-      const result = await slackRequest('conversations.history', 'GET', {
-        channel: channel_id,
-        limit: 100
-      });
+    /**
+     * Resource: slack://channel/{channel_id}/members
+     * Get list of members in a specific channel
+     */
+    server.registerResource(
+      'channel_members',
+      new ResourceTemplate('slack://channel/{channel_id}/members', { list: undefined }),
+      {
+        title: 'Channel Members',
+        description: 'Get list of all members in a specific channel'
+      },
+      async (uri, { channel_id }) => {
+        const result = await slackRequest('conversations.members', 'GET', {
+          channel: channel_id,
+          limit: 1000
+        });
 
-      return {
-        contents: [
-          {
-            uri: uri.href,
-            mimeType: 'application/json',
-            text: JSON.stringify({
-              channel_id,
-              messages: result.messages.map((msg: any) => ({
-                type: msg.type,
-                user: msg.user,
-                text: msg.text,
-                timestamp: msg.ts,
-                thread_ts: msg.thread_ts,
-                reply_count: msg.reply_count,
-                reactions: msg.reactions
-              }))
-            }, null, 2)
-          }
-        ]
-      };
-    }
-  );
+        // Get user info for each member
+        const memberDetails = await Promise.all(
+          result.members.slice(0, 50).map(async (userId: string) => {
+            try {
+              const userInfo = await slackRequest('users.info', 'GET', { user: userId });
+              return {
+                id: userId,
+                name: userInfo.user.name,
+                real_name: userInfo.user.real_name,
+                is_bot: userInfo.user.is_bot
+              };
+            } catch {
+              return { id: userId, name: 'Unknown', real_name: 'Unknown', is_bot: false };
+            }
+          })
+        );
 
-  /**
-   * Resource: slack://channel/{channel_id}/members
-   * Get list of members in a specific channel
-   */
-  server.registerResource(
-    'channel_members',
-    new ResourceTemplate('slack://channel/{channel_id}/members', { list: undefined }),
-    {
-      title: 'Channel Members',
-      description: 'Get list of all members in a specific channel'
-    },
-    async (uri, { channel_id }) => {
-      const result = await slackRequest('conversations.members', 'GET', {
-        channel: channel_id,
-        limit: 1000
-      });
+        return {
+          contents: [
+            {
+              uri: uri.href,
+              mimeType: 'application/json',
+              text: JSON.stringify(
+                {
+                  channel_id,
+                  total_members: result.members.length,
+                  members: memberDetails
+                },
+                null,
+                2
+              )
+            }
+          ]
+        };
+      }
+    );
 
-      // Get user info for each member
-      const memberDetails = await Promise.all(
-        result.members.slice(0, 50).map(async (userId: string) => {
-          try {
-            const userInfo = await slackRequest('users.info', 'GET', { user: userId });
-            return {
-              id: userId,
-              name: userInfo.user.name,
-              real_name: userInfo.user.real_name,
-              is_bot: userInfo.user.is_bot
-            };
-          } catch {
-            return { id: userId, name: 'Unknown', real_name: 'Unknown', is_bot: false };
-          }
-        })
-      );
-
-      return {
-        contents: [
-          {
-            uri: uri.href,
-            mimeType: 'application/json',
-            text: JSON.stringify({
-              channel_id,
-              total_members: result.members.length,
-              members: memberDetails
-            }, null, 2)
-          }
-        ]
-      };
-    }
-  );
-
-  /**
-   * Resource: slack://user/{user_id}
-   * Get detailed information about a specific user
-   */
-  /*server.registerResource(
+    /**
+     * Resource: slack://user/{user_id}
+     * Get detailed information about a specific user
+     */
+    /*server.registerResource(
     'user_info',
     new ResourceTemplate('slack://user/{user_id}', { list: undefined }),
     {
@@ -840,172 +882,186 @@ metorial.withArgs(config => {
     }
   );*/
 
-  /**
-   * Resource: slack://message/{channel_id}/{timestamp}
-   * Get a specific message and its thread
-   */
-  server.registerResource(
-    'message_info',
-    new ResourceTemplate('slack://message/{channel_id}/{timestamp}', { list: undefined }),
-    {
-      title: 'Message Information',
-      description: 'Get details about a specific message including reactions and metadata'
-    },
-    async (uri, { channel_id, timestamp }) => {
-      const result = await slackRequest('conversations.history', 'GET', {
-        channel: channel_id,
-        latest: timestamp,
-        inclusive: true,
-        limit: 1
-      });
+    /**
+     * Resource: slack://message/{channel_id}/{timestamp}
+     * Get a specific message and its thread
+     */
+    server.registerResource(
+      'message_info',
+      new ResourceTemplate('slack://message/{channel_id}/{timestamp}', { list: undefined }),
+      {
+        title: 'Message Information',
+        description: 'Get details about a specific message including reactions and metadata'
+      },
+      async (uri, { channel_id, timestamp }) => {
+        const result = await slackRequest('conversations.history', 'GET', {
+          channel: channel_id,
+          latest: timestamp,
+          inclusive: true,
+          limit: 1
+        });
 
-      if (!result.messages || result.messages.length === 0) {
-        throw new Error('Message not found');
+        if (!result.messages || result.messages.length === 0) {
+          throw new Error('Message not found');
+        }
+
+        const message = result.messages[0];
+
+        return {
+          contents: [
+            {
+              uri: uri.href,
+              mimeType: 'application/json',
+              text: JSON.stringify(
+                {
+                  channel_id,
+                  timestamp: message.ts,
+                  user: message.user,
+                  text: message.text,
+                  type: message.type,
+                  thread_ts: message.thread_ts,
+                  reply_count: message.reply_count,
+                  reply_users_count: message.reply_users_count,
+                  reactions: message.reactions,
+                  attachments: message.attachments,
+                  blocks: message.blocks
+                },
+                null,
+                2
+              )
+            }
+          ]
+        };
       }
+    );
 
-      const message = result.messages[0];
+    /**
+     * Resource: slack://thread/{channel_id}/{thread_ts}
+     * Get all replies in a message thread
+     */
+    server.registerResource(
+      'thread_replies',
+      new ResourceTemplate('slack://thread/{channel_id}/{thread_ts}', { list: undefined }),
+      {
+        title: 'Thread Replies',
+        description: 'Get all replies in a message thread'
+      },
+      async (uri, { channel_id, thread_ts }) => {
+        const result = await slackRequest('conversations.replies', 'GET', {
+          channel: channel_id,
+          ts: thread_ts
+        });
 
-      return {
-        contents: [
-          {
-            uri: uri.href,
-            mimeType: 'application/json',
-            text: JSON.stringify({
-              channel_id,
-              timestamp: message.ts,
-              user: message.user,
-              text: message.text,
-              type: message.type,
-              thread_ts: message.thread_ts,
-              reply_count: message.reply_count,
-              reply_users_count: message.reply_users_count,
-              reactions: message.reactions,
-              attachments: message.attachments,
-              blocks: message.blocks
-            }, null, 2)
-          }
-        ]
-      };
-    }
-  );
+        return {
+          contents: [
+            {
+              uri: uri.href,
+              mimeType: 'application/json',
+              text: JSON.stringify(
+                {
+                  channel_id,
+                  thread_ts,
+                  reply_count: result.messages.length - 1,
+                  messages: result.messages.map((msg: any) => ({
+                    user: msg.user,
+                    text: msg.text,
+                    timestamp: msg.ts,
+                    reactions: msg.reactions
+                  }))
+                },
+                null,
+                2
+              )
+            }
+          ]
+        };
+      }
+    );
 
-  /**
-   * Resource: slack://thread/{channel_id}/{thread_ts}
-   * Get all replies in a message thread
-   */
-  server.registerResource(
-    'thread_replies',
-    new ResourceTemplate('slack://thread/{channel_id}/{thread_ts}', { list: undefined }),
-    {
-      title: 'Thread Replies',
-      description: 'Get all replies in a message thread'
-    },
-    async (uri, { channel_id, thread_ts }) => {
-      const result = await slackRequest('conversations.replies', 'GET', {
-        channel: channel_id,
-        ts: thread_ts
-      });
+    /**
+     * Resource: slack://workspace/info
+     * Get workspace information
+     */
+    server.registerResource(
+      'workspace_info',
+      new ResourceTemplate('slack://workspace/info', { list: undefined }),
+      {
+        title: 'Workspace Information',
+        description: 'Get information about the current Slack workspace'
+      },
+      async uri => {
+        const result = await slackRequest('team.info', 'GET', {});
 
-      return {
-        contents: [
-          {
-            uri: uri.href,
-            mimeType: 'application/json',
-            text: JSON.stringify({
-              channel_id,
-              thread_ts,
-              reply_count: result.messages.length - 1,
-              messages: result.messages.map((msg: any) => ({
-                user: msg.user,
-                text: msg.text,
-                timestamp: msg.ts,
-                reactions: msg.reactions
-              }))
-            }, null, 2)
-          }
-        ]
-      };
-    }
-  );
+        const team = result.team;
 
-  /**
-   * Resource: slack://workspace/info
-   * Get workspace information
-   */
-  server.registerResource(
-    'workspace_info',
-    new ResourceTemplate('slack://workspace/info', { list: undefined }),
-    {
-      title: 'Workspace Information',
-      description: 'Get information about the current Slack workspace'
-    },
-    async (uri) => {
-      const result = await slackRequest('team.info', 'GET', {});
+        return {
+          contents: [
+            {
+              uri: uri.href,
+              mimeType: 'application/json',
+              text: JSON.stringify(
+                {
+                  id: team.id,
+                  name: team.name,
+                  domain: team.domain,
+                  email_domain: team.email_domain,
+                  icon: team.icon
+                },
+                null,
+                2
+              )
+            }
+          ]
+        };
+      }
+    );
 
-      const team = result.team;
+    /**
+     * Resource: slack://file/{file_id}
+     * Get information about a specific file
+     */
+    server.registerResource(
+      'file_info',
+      new ResourceTemplate('slack://file/{file_id}', { list: undefined }),
+      {
+        title: 'File Information',
+        description: 'Get information about a specific uploaded file'
+      },
+      async (uri, { file_id }) => {
+        const result = await slackRequest('files.info', 'GET', {
+          file: file_id
+        });
 
-      return {
-        contents: [
-          {
-            uri: uri.href,
-            mimeType: 'application/json',
-            text: JSON.stringify({
-              id: team.id,
-              name: team.name,
-              domain: team.domain,
-              email_domain: team.email_domain,
-              icon: team.icon
-            }, null, 2)
-          }
-        ]
-      };
-    }
-  );
+        const file = result.file;
 
-  /**
-   * Resource: slack://file/{file_id}
-   * Get information about a specific file
-   */
-  server.registerResource(
-    'file_info',
-    new ResourceTemplate('slack://file/{file_id}', { list: undefined }),
-    {
-      title: 'File Information',
-      description: 'Get information about a specific uploaded file'
-    },
-    async (uri, { file_id }) => {
-      const result = await slackRequest('files.info', 'GET', {
-        file: file_id
-      });
-
-      const file = result.file;
-
-      return {
-        contents: [
-          {
-            uri: uri.href,
-            mimeType: 'application/json',
-            text: JSON.stringify({
-              id: file.id,
-              name: file.name,
-              title: file.title,
-              mimetype: file.mimetype,
-              filetype: file.filetype,
-              size: file.size,
-              url_private: file.url_private,
-              url_private_download: file.url_private_download,
-              permalink: file.permalink,
-              created: file.created,
-              user: file.user,
-              channels: file.channels,
-              comments_count: file.comments_count
-            }, null, 2)
-          }
-        ]
-      };
-    }
-  );
-
-  // Start the server
-  metorial.startServer(server);
-})
+        return {
+          contents: [
+            {
+              uri: uri.href,
+              mimeType: 'application/json',
+              text: JSON.stringify(
+                {
+                  id: file.id,
+                  name: file.name,
+                  title: file.title,
+                  mimetype: file.mimetype,
+                  filetype: file.filetype,
+                  size: file.size,
+                  url_private: file.url_private,
+                  url_private_download: file.url_private_download,
+                  permalink: file.permalink,
+                  created: file.created,
+                  user: file.user,
+                  channels: file.channels,
+                  comments_count: file.comments_count
+                },
+                null,
+                2
+              )
+            }
+          ]
+        };
+      }
+    );
+  }
+);
