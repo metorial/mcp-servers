@@ -1,0 +1,15 @@
+{
+  "name": "mcp-servers",
+  "type": "module",
+  "private": true,
+  "workspaces": [
+    "servers/*",
+    "packages/*"
+  ],
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}

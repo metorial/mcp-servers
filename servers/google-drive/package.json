@@ -1,5 +1,5 @@
 {
-  "name": "@metorial-server/hackernews",
+  "name": "@metorial-server/google-drive",
   "version": "1.0.0",
   "main": "server.ts",
   "devDependencies": {
