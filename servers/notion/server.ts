@@ -135,33 +135,37 @@ metorial.createServer<{
             .string()
             .optional()
             .describe('Search query (omit to return all accessible pages)'),
-          filter: z
-            .object({
-              value: z.enum(['page', 'database']),
-              property: z.literal('object')
-            })
-            .optional()
-            .describe('Filter by object type'),
-          sort: z
-            .object({
-              direction: z.enum(['ascending', 'descending']),
-              timestamp: z.enum(['last_edited_time'])
-            })
-            .optional()
-            .describe('Sort order'),
+          sort: z.enum(['ascending', 'descending']).describe('Sort order'),
           pageSize: z.number().optional().describe('Number of results (max 100)')
         }
       },
-      async ({ query, filter, sort, pageSize = 100 }) => {
+      async ({ query, sort, pageSize = 100 }) => {
         const body: any = {
           page_size: pageSize
         };
-
-        if (query) body.query = query;
-        if (filter) body.filter = filter;
-        if (sort) body.sort = sort;
+        if (sort) body.sort = { direction: sort, timestamp: 'last_edited_time' };
 
         const result = await makeNotionRequest('/search', 'POST', body);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
+        };
+      }
+    );
+
+    server.registerTool(
+      'list_pages',
+      {
+        title: 'List Pages',
+        description: 'List all pages in the workspace (limited to 100)',
+        inputSchema: {
+          pageSize: z.number().optional().describe('Number of results (max 100)')
+        }
+      },
+      async ({ pageSize = 100 }) => {
+        const result = await makeNotionRequest('/search', 'POST', {
+          page_size: pageSize,
+          filter: { property: 'object', value: 'page' }
+        });
         return {
           content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
         };
