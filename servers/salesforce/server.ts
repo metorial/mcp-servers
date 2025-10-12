@@ -153,7 +153,7 @@ metorial.setOauthHandler({
 metorial.createServer<{
   token: string;
   instance_url: string;
-  id: string;
+  // id: string;
 }>(
   {
     name: 'salesforce-mcp-server',

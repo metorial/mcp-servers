@@ -5,6 +5,74 @@ import { metorial, ResourceTemplate, z } from '@metorial/mcp-server-sdk';
  * Provides tools and resources for interacting with GitHub via the REST API
  */
 
+metorial.setOauthHandler({
+  getAuthForm: () => ({
+    fields: []
+  }),
+  getAuthorizationUrl: async input => {
+    const scopes = ['repo', 'user', 'read:org', 'write:discussion', 'gist'].join(' ');
+
+    const params = new URLSearchParams({
+      client_id: input.clientId,
+      redirect_uri: input.redirectUri,
+      scope: scopes,
+      state: input.state
+    });
+
+    return {
+      authorizationUrl: `https://github.com/login/oauth/authorize?${params.toString()}`
+    };
+  },
+  handleCallback: async input => {
+    try {
+      const url = new URL(input.fullUrl);
+      const code = url.searchParams.get('code');
+
+      if (!code) {
+        throw new Error('No authorization code received');
+      }
+
+      const tokenParams = new URLSearchParams({
+        client_id: input.clientId,
+        client_secret: input.clientSecret,
+        code: code,
+        redirect_uri: input.redirectUri
+      });
+
+      const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: tokenParams.toString()
+      });
+
+      if (!tokenResponse.ok) {
+        const errorText = await tokenResponse.text();
+        throw new Error(`Token exchange failed: ${errorText}`);
+      }
+
+      const tokenData = (await tokenResponse.json()) as any;
+
+      if (tokenData.error) {
+        throw new Error(
+          `GitHub OAuth error: ${tokenData.error_description || tokenData.error}`
+        );
+      }
+
+      return {
+        access_token: tokenData.access_token,
+        token_type: tokenData.token_type,
+        scope: tokenData.scope
+      };
+    } catch (err) {
+      console.log(err);
+      throw err;
+    }
+  }
+});
+
 interface Config {
   token: string;
 }

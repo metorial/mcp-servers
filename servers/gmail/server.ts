@@ -138,7 +138,7 @@ metorial.createServer<{
     name: 'gmail-mcp-server',
     version: '1.0.0'
   },
-  async (server, config: any) => {
+  async (server, config) => {
     // Helper function to make Gmail API calls
     async function makeGmailRequest(endpoint: string, method: string = 'GET', body?: any) {
       const url = `https://gmail.googleapis.com/gmail/v1${endpoint}`;
@@ -146,7 +146,7 @@ metorial.createServer<{
       const options: any = {
         method,
         headers: {
-          Authorization: `Bearer ${config.token.access_token}`,
+          Authorization: `Bearer ${config.token}`,
           'Content-Type': 'application/json',
           Accept: 'application/json'
         }

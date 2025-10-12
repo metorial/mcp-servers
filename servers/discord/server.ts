@@ -9,6 +9,110 @@ interface Config {
   token: string;
 }
 
+metorial.setOauthHandler({
+  getAuthForm: () => ({
+    fields: []
+  }),
+  getAuthorizationUrl: async input => {
+    const scopes = ['bot', 'messages.read', 'guilds', 'guilds.members.read'].join('%20');
+
+    const params = new URLSearchParams({
+      client_id: input.clientId,
+      redirect_uri: input.redirectUri,
+      response_type: 'code',
+      scope: scopes,
+      state: input.state,
+      permissions: '3072' // Send Messages + Read Message History
+    });
+
+    return {
+      authorizationUrl: `https://discord.com/oauth2/authorize?${params.toString()}`
+    };
+  },
+  handleCallback: async input => {
+    try {
+      const url = new URL(input.fullUrl);
+      const code = url.searchParams.get('code');
+
+      if (!code) {
+        throw new Error('No authorization code received');
+      }
+
+      const tokenParams = new URLSearchParams({
+        client_id: input.clientId,
+        client_secret: input.clientSecret,
+        grant_type: 'authorization_code',
+        code: code,
+        redirect_uri: input.redirectUri
+      });
+
+      const tokenResponse = await fetch('https://discord.com/api/v10/oauth2/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: tokenParams.toString()
+      });
+
+      if (!tokenResponse.ok) {
+        const errorText = await tokenResponse.text();
+        throw new Error(`Token exchange failed: ${errorText}`);
+      }
+
+      const tokenData = (await tokenResponse.json()) as any;
+
+      return {
+        access_token: tokenData.access_token,
+        token_type: tokenData.token_type,
+        expires_in: tokenData.expires_in,
+        refresh_token: tokenData.refresh_token,
+        scope: tokenData.scope,
+        webhook: tokenData.webhook,
+        guild: tokenData.guild
+      };
+    } catch (err) {
+      console.log(err);
+      throw err;
+    }
+  },
+  refreshAccessToken: async input => {
+    try {
+      const tokenParams = new URLSearchParams({
+        client_id: input.clientId,
+        client_secret: input.clientSecret,
+        grant_type: 'refresh_token',
+        refresh_token: input.refreshToken
+      });
+
+      const tokenResponse = await fetch('https://discord.com/api/v10/oauth2/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: tokenParams.toString()
+      });
+
+      if (!tokenResponse.ok) {
+        const errorText = await tokenResponse.text();
+        throw new Error(`Token refresh failed: ${errorText}`);
+      }
+
+      const tokenData = (await tokenResponse.json()) as any;
+
+      return {
+        access_token: tokenData.access_token,
+        token_type: tokenData.token_type,
+        expires_in: tokenData.expires_in,
+        refresh_token: tokenData.refresh_token || input.refreshToken,
+        scope: tokenData.scope
+      };
+    } catch (err) {
+      console.log(err);
+      throw err;
+    }
+  }
+});
+
 metorial.createServer<Config>(
   {
     name: 'discord-mcp-server',
